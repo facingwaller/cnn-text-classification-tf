@@ -13,11 +13,14 @@ from tensorflow.contrib import learn
 # ==================================================
 
 # Data loading params
+# 数据集里10%为验证集；POS正例；NEG反例
+# 注释参考这篇文章，http://blog.csdn.net/github_38414650/article/details/74019595
 tf.flags.DEFINE_float("dev_sample_percentage", .1, "Percentage of the training data to use for validation")
 tf.flags.DEFINE_string("positive_data_file", "./data/rt-polaritydata/rt-polarity.pos", "Data source for the positive data.")
 tf.flags.DEFINE_string("negative_data_file", "./data/rt-polaritydata/rt-polarity.neg", "Data source for the negative data.")
 
 # Model Hyperparameters
+# embedding维度128，3种卷积核，每种128个，0.5的dropout；
 tf.flags.DEFINE_integer("embedding_dim", 128, "Dimensionality of character embedding (default: 128)")
 tf.flags.DEFINE_string("filter_sizes", "3,4,5", "Comma-separated filter sizes (default: '3,4,5')")
 tf.flags.DEFINE_integer("num_filters", 128, "Number of filters per filter size (default: 128)")
@@ -25,12 +28,15 @@ tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (defau
 tf.flags.DEFINE_float("l2_reg_lambda", 0.0, "L2 regularization lambda (default: 0.0)")
 
 # Training parameters
+# batch_size：1次迭代所使用的样本量； ；一个epoch是指把所有训练数据完整的过一遍；iteration：表示1次迭代，每次迭代更新1次网络结构的参数
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
-tf.flags.DEFINE_integer("num_epochs", 200, "Number of training epochs (default: 200)")
-tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
-tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
+tf.flags.DEFINE_integer("num_epochs", 20, "Number of training epochs (default: 200)")
+tf.flags.DEFINE_integer("evaluate_every", 10, "Evaluate model on dev set after this many steps (default: 100)")
+tf.flags.DEFINE_integer("checkpoint_every", 10, "Save model after this many steps (default: 100)")
 tf.flags.DEFINE_integer("num_checkpoints", 5, "Number of checkpoints to store (default: 5)")
 # Misc Parameters
+# true表示自动寻找一个存在并支持的cpu或者gpu，防止指定的设备不存在
+# 如果将False改为True，可以看到operations被指派到哪个设备运行
 tf.flags.DEFINE_boolean("allow_soft_placement", True, "Allow device soft device placement")
 tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on devices")
 
@@ -44,21 +50,27 @@ print("")
 
 # Data Preparation
 # ==================================================
+print("time"+"\t\t"+str(datetime.datetime.now().isoformat()))
 
 # Load data
 print("Loading data...")
 x_text, y = data_helpers.load_data_and_labels(FLAGS.positive_data_file, FLAGS.negative_data_file)
+print("time"+"\t\t"+str(datetime.datetime.now().isoformat()))
 
 # Build vocabulary
-max_document_length = max([len(x.split(" ")) for x in x_text])
-vocab_processor = learn.preprocessing.VocabularyProcessor(max_document_length)
+max_document_length = max([len(x.split(" ")) for x in x_text])  # 获取单行的最大的长度
+vocab_processor = learn.preprocessing.VocabularyProcessor(max_document_length) # 单词转化为在字典中的位置，这是一个操作
 x = np.array(list(vocab_processor.fit_transform(x_text)))
+# 在不够长度的评价最后加0，样本变成了索引数值矩阵，这里的x已经是索引序列了，n*seq_len的tensor
+
+print("time"+"\t\t"+str(datetime.datetime.now().isoformat()))
 
 # Randomly shuffle data
 np.random.seed(10)
-shuffle_indices = np.random.permutation(np.arange(len(y)))
+shuffle_indices = np.random.permutation(np.arange(len(y)))  # 打乱样本
 x_shuffled = x[shuffle_indices]
 y_shuffled = y[shuffle_indices]
+print("time"+"\t\t"+str(datetime.datetime.now().isoformat()))
 
 # Split train/test set
 # TODO: This is very crude, should use cross-validation
@@ -78,12 +90,13 @@ print("Train/Dev split: {:d}/{:d}".format(len(y_train), len(y_dev)))
 with tf.Graph().as_default():
     session_conf = tf.ConfigProto(
       allow_soft_placement=FLAGS.allow_soft_placement,
-      log_device_placement=FLAGS.log_device_placement)
-    sess = tf.Session(config=session_conf)
+      log_device_placement=FLAGS.log_device_placement)  # 这个session配置，按照前面的gpu，cpu自动选择
+
+    sess = tf.Session(config=session_conf)  # 建立一个配置如上的会话
     with sess.as_default():
         cnn = TextCNN(
-            sequence_length=x_train.shape[1],
-            num_classes=y_train.shape[1],
+            sequence_length=x_train.shape[1],  # [0]是样本维度，样本数量，[1]是单个样本的长度
+            num_classes=y_train.shape[1],  # 同理，这里是类别数量
             vocab_size=len(vocab_processor.vocabulary_),
             embedding_size=FLAGS.embedding_dim,
             filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
